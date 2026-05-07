@@ -44,6 +44,8 @@ class SalesMarketingState(TypedDict, total=False):
 
     lead_research: str
 
+    pending_leads: list
+
     icp_analysis: str
 
     competitor_analysis: str

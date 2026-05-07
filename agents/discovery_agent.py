@@ -3,56 +3,53 @@ import re
 from llm import llm
 from tools.search_tool import web_search
 
-def discovery_agent(state):
+
+def discovery_agent(state: dict) -> dict:
     """
-    Finds potential leads (companies) based on the target requirements (jd.txt).
+    Finds potential leads and stores them as pending_leads.
+    The supervisor will pop from this list one at a time.
     """
     client_requirements = state.get("client_requirements", "")
-    
-    # 1. Use LLM to generate a clean, short search query (avoid long URL issues)
-    query_prompt = f"""
-    Based on these requirements, generate a short 5-8 word search query to find companies hiring for these skills:
-    {client_requirements[:1000]}
-    
-    Return ONLY the search query string.
-    """
-    query_response = llm.invoke(query_prompt)
+
+    # ── Step 1: Generate a clean search query ─────────────────────────────────
+    query_response = llm.invoke(
+        f"""Based on these requirements, generate a short 5-8 word search query
+        to find companies that need these services:
+        {client_requirements[:1000]}
+
+        Return ONLY the search query string, no quotes, no preamble."""
+    )
     search_query = query_response.content.strip().strip('"')
-    
-    # Clean query from potential markdown or extra text
     search_query = re.sub(r'^Query:\s*', '', search_query, flags=re.IGNORECASE)
-    
+
     print(f"[DISCOVERY AGENT] Searching for: {search_query}")
-    
-    # 2. Perform the search
+
+    # ── Step 2: Search ─────────────────────────────────────────────────────────
     search_results = web_search(search_query, max_results=10)
 
-    # 3. Analyze results to find specific leads
+    # ── Step 3: Extract structured leads ──────────────────────────────────────
     response = llm.invoke(
-        f"""
-        You are a Lead Discovery Agent.
-        
-        Based on the following client requirements and search results, identify 3-5 potential target companies (leads) that Webanix Solutions could approach.
-        
-        Target Requirements:
+        f"""You are a Lead Discovery Agent.
+
+        Identify 3-5 companies from the search results that Webanix Solutions
+        could approach based on the requirements below.
+
+        Requirements:
         {client_requirements}
-        
+
         Search Results:
         {json.dumps(search_results, indent=2)}
-        
-        For each potential lead, provide:
-        - company_name
-        - reason_for_targeting
-        - industry
-        
-        Return a list of leads in structured JSON format:
+
+        Return STRICT JSON only — no markdown, no preamble:
         {{
-            "discovered_leads": [
-                {{"company_name": "Name", "reason": "...", "industry": "..."}},
-                ...
+            "leads": [
+                {{
+                    "company_name": "...",
+                    "industry":     "...",
+                    "reason":       "one sentence why they are a good fit"
+                }}
             ]
-        }}
-        """
+        }}"""
     )
 
     try:
@@ -61,14 +58,31 @@ def discovery_agent(state):
             content = content[7:-3].strip()
         elif content.startswith("```"):
             content = content[3:-3].strip()
-            
-        data = json.loads(content)
-        discovered_leads = data.get("discovered_leads", [])
+
+        data          = json.loads(content)
+        pending_leads = data.get("leads", [])
+
     except Exception as e:
-        print(f"[DISCOVERY AGENT] Error parsing leads: {e}")
-        discovered_leads = []
+        print(f"[DISCOVERY AGENT] Parse error: {e}")
+        pending_leads = []
+
+    print(f"[DISCOVERY AGENT] Found {len(pending_leads)} leads: "
+          f"{[l.get('company_name') for l in pending_leads]}")
 
     return {
-        "discovered_leads": discovered_leads,
-        "current_lead_index": 0
+        # ── Feed the supervisor's queue ────────────────────────────────────────
+        "pending_leads":       pending_leads,
+
+        # ── Initialise tracking fields ─────────────────────────────────────────
+        "current_lead":        None,
+        "company_name":        None,
+        "completed_leads":     [],
+
+        # ── Clear any stale pipeline outputs ──────────────────────────────────
+        "lead_research":       None,
+        "icp_analysis":        None,
+        "competitor_analysis": None,
+        "outreach_content":    None,
+        "proposal_document":   None,
+        "crm_update":          None,
     }

@@ -1,7 +1,18 @@
 from ddgs import DDGS
 
 def find_linkedin_profiles(company_name):
-    query = f"site:linkedin.com/in/ CTO OR CEO OR Founder {company_name}"
+    query = f'''
+        site:linkedin.com/in/
+        ("{company_name}")
+        ("CTO" OR
+        "CIO" OR
+        "VP Engineering" OR
+        "Head of Engineering" OR
+        "Director Engineering" OR
+        "Head of AI" OR
+        "Head of Technology" OR
+        "Engineering Manager")
+    '''
     profiles = []
     try:
         with DDGS() as ddgs:
